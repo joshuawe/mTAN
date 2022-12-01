@@ -2,6 +2,7 @@
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
+import pandas as pd
 
 import numpy as np
 from physionet import PhysioNet, get_data_min_max, variable_time_collate_fn2
@@ -492,6 +493,40 @@ def sine_wave_data_gen(args, seed=0):
                     "input_dim": 1,
                     "ground_truth": np.array(ground_truth)}
     return data_objects
+
+def get_toy_data_josh(args, path=None):
+    """Get the toy dataset for the mTAN imputation net.
+
+    Args:
+        args (): Arguments
+        path (str, optional): Patht to dataset file. Defaults to None.
+
+    Returns:
+        dict: The dataloader and information
+    """
+    if path is None:
+        path = '/home2/joshua.wendland/Documents/sepsis/toy_dataset/synthetic_ts_1/synthetic_ts_test_data_eav.csv.gz'
+
+    df = pd.read_csv(path, compression=None)
+    df = df.sort_values(by=['id', 'time'], ascending=True, ignore_index=True)  # time was not sorted
+    input_dim = len(df.columns) - 2
+    combined_data = df.to_numpy()
+
+    train_data, test_data = model_selection.train_test_split(combined_data, train_size=0.8,
+                                                             random_state=42, shuffle=True)
+    print('Shapes:\tTrain data  ', train_data.shape, '\tTest data  ', test_data.shape)
+    train_dataloader = DataLoader(torch.from_numpy(
+        train_data).float(), batch_size=args.batch_size, shuffle=False)
+    test_dataloader = DataLoader(torch.from_numpy(
+        test_data).float(), batch_size=args.batch_size, shuffle=False)
+    data_objects = {"dataset_obj": combined_data,
+                    "train_dataloader": train_dataloader,
+                    "test_dataloader": test_dataloader,
+                    "input_dim": input_dim,
+                    "ground_truth": np.array(ground_truth)}
+    return data_objects
+
+
 
 
 def kernel_smoother_data_gen(args, alpha=100., seed=0, ref_points=10):
