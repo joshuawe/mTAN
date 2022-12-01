@@ -1,3 +1,5 @@
+""" EDIT JOSH """
+
 # pylint: disable=E1101, E0401, E1102, W0621, W0221
 import argparse
 import numpy as np
@@ -47,6 +49,8 @@ args = parser.parse_args()
 
 
 if __name__ == '__main__':
+
+    # Set random seeds
     experiment_id = int(SystemRandom().random() * 100000)
     print(args, experiment_id)
     seed = args.seed
@@ -54,14 +58,13 @@ if __name__ == '__main__':
     np.random.seed(seed)
     torch.cuda.manual_seed(seed)
 
+    # Set the device to run calculation on
     device = torch.device(
         'cuda' if torch.cuda.is_available() else 'cpu')
-    #device = torch.device('cpu')
 
+    # consider the correct dataset
     if args.dataset == 'toy':
         data_obj = utils.kernel_smoother_data_gen(args, alpha=100., seed=0)
-    elif args.dataset == 'physionet':
-        data_obj = utils.get_physionet_data(args, 'cpu', args.quantization)
 
     train_loader = data_obj["train_dataloader"]
     test_loader = data_obj["test_dataloader"]
@@ -105,9 +108,9 @@ if __name__ == '__main__':
         print('Test MSE', utils.evaluate(dim, rec, dec, test_loader, args, 50))
 
     # Set up Tensorboard
+    start_time = datetime.now().strftime("%Y.%m.%d.%H.%M.%S")
     path = '/home2/joshua.wendland/Documents/sepsis/imputation/mTAN/runs/'
     path += f'{args.dataset}/'
-    start_time = datetime.now().strftime("%Y.%m.%d.%H.%M.%S")
     path += f'/{start_time}'
     writer = SummaryWriter(log_dir=path)
 
