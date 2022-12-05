@@ -3,13 +3,15 @@ import argparse
 import numpy as np
 import torch
 import torch.optim as optim
+from torch.utils.tensorboard import SummaryWriter
+from datetime import datetime
 
 from random import SystemRandom
 import models
 import utils
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--niters', type=int, default=2000)
+parser.add_argument('--niters', type=int, default=2000, help='Number of epochs')
 parser.add_argument('--lr', type=float, default=0.01)
 parser.add_argument('--std', type=float, default=0.01)
 parser.add_argument('--latent-dim', type=int, default=32)
@@ -54,6 +56,7 @@ if __name__ == '__main__':
 
     device = torch.device(
         'cuda' if torch.cuda.is_available() else 'cpu')
+    #device = torch.device('cpu')
 
     if args.dataset == 'toy':
         data_obj = utils.kernel_smoother_data_gen(args, alpha=100., seed=0)
@@ -101,6 +104,14 @@ if __name__ == '__main__':
         print('Test MSE', utils.evaluate(dim, rec, dec, test_loader, args, 30))
         print('Test MSE', utils.evaluate(dim, rec, dec, test_loader, args, 50))
 
+    # Set up Tensorboard
+    path = '/home2/joshua.wendland/Documents/sepsis/imputation/mTAN/runs/'
+    path += f'{args.dataset}/'
+    start_time = datetime.now().strftime("%Y.%m.%d.%H.%M.%S")
+    path += f'/{start_time}'
+    writer = SummaryWriter(log_dir=path)
+
+    # Run through epochs
     for itr in range(1, args.niters + 1):
         train_loss = 0
         train_n = 0
@@ -157,9 +168,17 @@ if __name__ == '__main__':
 
         print('Iter: {}, avg elbo: {:.4f}, avg reconst: {:.4f}, avg kl: {:.4f}, mse: {:.6f}'
             .format(itr, train_loss / train_n, -avg_reconst / train_n, avg_kl / train_n, mse / train_n))
+        writer.add_scalar('avg elbo', train_loss / train_n, itr)
+        writer.add_scalar('avg reconst', -avg_reconst / train_n, itr)
+        writer.add_scalar('avg kl', avg_kl / train_n, itr)
+        writer.add_scalar('avg mse', mse / train_n, itr)
+
         if itr % 10 == 0:
-            print('Test Mean Squared Error', utils.evaluate(dim, rec, dec, test_loader, args, 1))
+            mse = utils.evaluate(dim, rec, dec, test_loader, args, 1)
+            writer.add_scalar('Test MSE', mse, itr)
+            print('Test Mean Squared Error', mse)
         if itr % 10 == 0 and args.save:
+            path_save = path + args.dataset + '_' + args.enc + '_' + args.dec + '_' + str(experiment_id) + '.h5'
             torch.save({
                 'args': args,
                 'epoch': itr,
@@ -167,5 +186,4 @@ if __name__ == '__main__':
                 'dec_state_dict': dec.state_dict(),
                 'optimizer_state_dict': optimizer.state_dict(),
                 'loss': -loss,
-            }, args.dataset + '_' + args.enc + '_' + args.dec + '_' +
-                str(experiment_id) + '.h5')
+            }, path_save)

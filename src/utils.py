@@ -1,7 +1,7 @@
 # pylint: disable=E1101
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader, TensorDataset
+from torch.utils.data import DataLoader, TensorDataset, Dataset
 import pandas as pd
 
 import numpy as np
@@ -10,6 +10,10 @@ from sklearn import model_selection
 from sklearn import metrics
 from person_activity import PersonActivity
 
+import sys
+path_data_utils = '/home2/joshua.wendland/Documents/sepsis/toy_dataset/'
+sys.path.insert(1, path_data_utils)
+import data_utils
 
 def count_parameters(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -71,11 +75,13 @@ def evaluate(dim, rec, dec, test_loader, args, num_sample=10, device="cuda"):
             else:
                 subsampled_data, subsampled_tp, subsampled_mask = \
                     observed_data, observed_tp, observed_mask
+            # forward pass to encoder
             out = rec(torch.cat((subsampled_data, subsampled_mask), 2), subsampled_tp)
             qz0_mean, qz0_logvar = (
                 out[:, :, : args.latent_dim],
                 out[:, :, args.latent_dim:],
             )
+            # drar num_sample from normal distr. with 
             epsilon = torch.randn(
                 num_sample, qz0_mean.shape[0], qz0_mean.shape[1], qz0_mean.shape[2]
             ).to(device)
@@ -85,7 +91,9 @@ def evaluate(dim, rec, dec, test_loader, args, num_sample=10, device="cuda"):
             time_steps = (
                 observed_tp[None, :, :].repeat(num_sample, 1, 1).view(-1, seqlen)
             )
+            # forward pass to decoder
             pred_x = dec(z0, time_steps)
+            # get the average/mean of all num_sample draws
             pred_x = pred_x.view(num_sample, -1, pred_x.shape[1], pred_x.shape[2])
             pred_x = pred_x.mean(0)
             mse += mean_squared_error(observed_data, pred_x, observed_mask) * batch
@@ -504,26 +512,21 @@ def get_toy_data_josh(args, path=None):
     Returns:
         dict: The dataloader and information
     """
-    if path is None:
-        path = '/home2/joshua.wendland/Documents/sepsis/toy_dataset/synthetic_ts_1/synthetic_ts_test_data_eav.csv.gz'
+    missingness = 'mcar'
+    missingness_rate = 0.1
+    missingness_values = -1
+    dataset = data_utils.ToyDataset(path, 
+                                    missingness=missingness, 
+                                    missingness_rate=missingness_rate, 
+                                    missingness_value=missingness_values
+    )
+    train_dataloader = DataLoader(dataset=dataset, batch_size=args.batch_size, shuffle=False)
 
-    df = pd.read_csv(path, compression=None)
-    df = df.sort_values(by=['id', 'time'], ascending=True, ignore_index=True)  # time was not sorted
-    input_dim = len(df.columns) - 2
-    combined_data = df.to_numpy()
-
-    train_data, test_data = model_selection.train_test_split(combined_data, train_size=0.8,
-                                                             random_state=42, shuffle=True)
-    print('Shapes:\tTrain data  ', train_data.shape, '\tTest data  ', test_data.shape)
-    train_dataloader = DataLoader(torch.from_numpy(
-        train_data).float(), batch_size=args.batch_size, shuffle=False)
-    test_dataloader = DataLoader(torch.from_numpy(
-        test_data).float(), batch_size=args.batch_size, shuffle=False)
-    data_objects = {"dataset_obj": combined_data,
+    data_objects = {"dataset_obj": None,
                     "train_dataloader": train_dataloader,
-                    "test_dataloader": test_dataloader,
-                    "input_dim": input_dim,
-                    "ground_truth": np.array(ground_truth)}
+                    "test_dataloader": train_dataloader,
+                    "input_dim": dataset.input_dim,
+                    "ground_truth": None}
     return data_objects
 
 
@@ -556,15 +559,15 @@ def kernel_smoother_data_gen(args, alpha=100., seed=0, ref_points=10):
     obs_values = np.array(obs_values)
     obs_times = np.array(obs_times)
     ground_truth = np.array(ground_truth)
-    print(obs_values.shape, obs_times.shape, ground_truth.shape)
+    print('obs_values.shape, obs_times.shape, ground_truth.shape', obs_values.shape, obs_times.shape, ground_truth.shape)
     mask = np.ones_like(obs_values)
     combined_data = np.concatenate((np.expand_dims(obs_values, axis=2), np.expand_dims(
         mask, axis=2), np.expand_dims(obs_times, axis=2)), axis=2)
-    print(combined_data.shape)
-    print(combined_data[0])
+    print('combined_data.shape', combined_data.shape)
+    print('combined_data[0]', combined_data[0])
     train_data, test_data = model_selection.train_test_split(combined_data, train_size=0.8,
                                                              random_state=42, shuffle=True)
-    print(train_data.shape, test_data.shape)
+    print('train_data.shape, test_data.shape', train_data.shape, test_data.shape)
     train_dataloader = DataLoader(torch.from_numpy(
         train_data).float(), batch_size=args.batch_size, shuffle=False)
     test_dataloader = DataLoader(torch.from_numpy(
